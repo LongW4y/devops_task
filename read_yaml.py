@@ -1,3 +1,7 @@
+"""
+Script to test .gitlab-ci.yml's syntax & it's contents.
+"""
+
 from yaml import load, Loader
 
 def read_yaml(filepath: str) -> dict:
