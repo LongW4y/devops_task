@@ -1,0 +1,99 @@
+# Define stages for the pipeline
+stages:
+  - verify_version
+  - test
+  - lint
+  - build
+  - publish
+
+
+# Define a base image for all jobs using the required node version from package.json. Loop through the characters from package.json engines.node, and if the character is not a digit or a dot, remove it.
+.set_node_version:
+  before_script:
+    # install jq to read package.json
+    - apt-get update --quiet && apt-get install --assume-yes --quiet jq # Install jq to read package.json
+    - NODE_VERSION=$(jq -r '.engines.node' package.json | sed 's/[^0-9.]//g') # Get the required node version from package.json, removing all non-digit and non-dot characters. We cannot do it with node --print because it's not run inside the container yet.
+  image: node:$NODE_VERSION # Use the required node version from package.json
+
+
+# Will act like a "before_script" as a first step inside the job's script, but inside the container, to login to the registry & install dependencies
+.set_config: &set_config
+  - NPM_REGISTRY=$(node --print "require('./package.json').publishConfig.registry") # Get the registry URL from package.json
+  # Set the .npmrc file with the registry URL and credentials from GitLab CI/CD variables
+  - npm config set user $NPM_REGISTRY_USER_NAME
+  - npm config set password $NPM_REGISTRY_USER_PASSWORD
+  - npm config set email $NPM_REGISTRY_USER_NAME@rtbhouse.com
+  - npm config set registry $NPM_REGISTRY
+  - npm config set scope $(node --print "require('./package.json').author") # Get the scope from package.json
+  - npm login # Login to the registry using the credentials found in the .npmrc file
+  - npm install # Install dependencies in package.json's dependencies and devDependencies
+
+
+# Define a job for verifying version only for merge requests
+verify_version:
+  extends: .set_node_version # << : *set_node_version vs extends: set_node_version - the latter is a new syntax for GitLab 13.0+, the former is the old syntax, both work. See https://docs.gitlab.com/ee/ci/yaml/#extends
+  stage: verify_version
+  only:
+    - merge_requests
+  script:
+    - *set_config
+    # Get the current version from package.json
+    - CURRENT_VERSION=$(node --print "require('./package.json').version")
+    # Get the package name from package.json
+    - PACKAGE_NAME=$(node --print "require('./package.json').name")
+    # Get the list of versions from the registry for the package name
+    - VERSIONS=$(npm view $PACKAGE_NAME versions --json)
+    # Check if the current version is in the list and fail if it is
+    - if echo $VERSIONS | grep --quiet "\"$CURRENT_VERSION\""; then echo "Current version ($CURRENT_VERSION) has been already published"; exit 1; fi
+    # Get the latest version from the registry for the package name
+    - LATEST_VERSION=$(npm view $PACKAGE_NAME version)
+    # Compare the current version and the latest version and fail if current is lower, sort --version-sort (a.k.a. -V) has to be used for semantic versioning
+    - if [ "$(printf '%s\n' "$CURRENT_VERSION" "$LATEST_VERSION" | sort --version-sort | head -n1)" = "$CURRENT_VERSION" ]; then echo "Current version ($CURRENT_VERSION) is lower than latest version ($LATEST_VERSION)"; exit 1; fi
+
+
+# Define a template for jobs running scripts
+.run_script:
+  extends: .set_node_version
+  only:
+    - merge_requests
+  script:
+    - *set_config
+    # Run the script
+    - npm run $SCRIPT_NAME
+
+
+# Define a job for testing
+test:
+  extends: .run_script
+  stage: test
+  variables:
+    SCRIPT_NAME: test
+
+
+# Define a job for linting
+lint:
+  extends: .set_node_version
+  stage: lint
+  variables:
+    SCRIPT_NAME: lint
+
+
+# Define a job for building
+build:
+  extends: .set_node_version
+  stage: build
+  variables:
+    SCRIPT_NAME: build
+
+
+# Define a job for publishing only for main branch after merging
+publish:
+  extends: .set_node_version
+  stage: publish
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "$CI_DEFAULT_BRANCH"' # Only run for main branch after merging, needs to have enabled merged results pipelines (https://docs.gitlab.com/ee/ci/pipelines/merged_results_pipelines.html#enable-merged-results-pipelines)
+  script:
+    - *set_config
+    # Run build script and publish the package to the registry
+    - npm run build
+    - npm publish --access restricted

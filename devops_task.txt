@@ -1,0 +1,49 @@
+Devops task
+
+The goal of this task is to prepare a generic Gitlab CI pipeline that can be used to lint, test, build and publish a Node.js + TypeScript package to a private npm registry.
+
+We have provided a sample package.json file of the package that you will be preparing the Gitlab CI pipeline for - you can find it in the shared Google Drive folder.
+
+1. Pipeline Stages:
+1.1 Stages that should run only in pipelines created for open Merge Requests in Gitlab:
+1.1.a Verify version - should check if current package version (denoted in package.json file) is newer than version that is currently published to the repository
+1.1.b Test - should run test npm script
+1.1.c Lint - should run lint npm script
+1.1.d Build - should run build npm script
+1.2 Stages that should run only in pipelines created after merging feature branch to main branch:
+1.2.a Publish - should run build npm script and publish the package to private npm registry
+
+2. Expected end results of this task
+2.1 Valid gitlab-ci.yml file that is generic - i.e. could be used in other repositories containing other packages without any changes required.
+2.2 Explanation of what needs to be set up in repository’s configuration
+2.3 Explanation of the functionalities of Gitlab CI that have been used and what purpose do they serve
+
+3. Testing provided solution is not viable and therefore we are not aiming for working gitlab-ci.yml file as there is no way to fully replicate the environment. We are interested in seeing your approach to the problem.
+
+4. Additional information
+4.1 Assume private registry is running at https://extra-npm.com 
+4.2 Publishing packages to registry is available only after logging in with credentials:
+4.2.a username: user
+4.2.b password: pass
+4.3 Credentials for registry should not be kept in plain text
+4.4 Take note of required Node.js version for the package
+
+
+========================
+
+
+TODO:
+- define 5 stages, 4 for merge requests, 1 for pushes to main branch - done
+- define a set of commands to set npm config, variables, login to registry & install dependencies, all based on package.json content - done
+- define an image to use for the pipeline, based on the Node.js version in package.json. Since it can't be read using node's print, we need to install & run jq to extract the version from package.json - done
+- define a verify version job, that checks: 1. If the current package version is newer than the one published to the registry, 2. If the current package version is newer than the one in the main branch - done
+- create a template for the script jobs - done
+- define 3 script jobs: test, lint, build - done
+- define publish job - done
+
+
+========================
+
+
+5. Bonus task
+Please explain how you would set up this Gitlab CI configuration for a group of repositories where the contents of the gitlab-ci.yml file are not duplicated in every repository - i.e. there is a Single Source of Truth for Gitlab CI configuration. Describe the setup in detail, including information about particular Gitlab CI functionalities that would be used.
